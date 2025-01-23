@@ -22,6 +22,13 @@ public class PlayerCharacterController : NetworkBehaviour
     private bool isGrounded;
     public LayerMask platforms;
 
+    private Animator animator;
+
+    public float groundedBuffer = 0.1f;
+    // private float groundedTimer = 1f;
+
+    [Networked] TickTimer timer { get; set; }
+
     [SerializeField] private int maxJumps = 3;
 
 
@@ -36,6 +43,9 @@ public class PlayerCharacterController : NetworkBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        rb.freezeRotation = true;
+        animator = GetComponent<Animator>();
+        animator.SetBool("isIdle", true);
 
         DisablePlayerControls();
         jumpUICanvas = Instantiate(jumpUICanvasPrefab);     // stvori canvas svakom igracu
@@ -63,6 +73,7 @@ public class PlayerCharacterController : NetworkBehaviour
     public void EnablePlayerControls()
     {
         Active = true;
+        animator.SetBool("isIdle", true);
         rb.gravityScale = defaultGravityScale;
     }
 
@@ -71,11 +82,21 @@ public class PlayerCharacterController : NetworkBehaviour
     {
 
         if (Active && GetInput(out NetorkData input)){
-          
+       
         
             // Horizontal movement
             float moveX = input.Movement.x;
             rb.velocity = new Vector2(moveX * moveSpeed, rb.velocity.y);
+
+            // UnityEngine.Debug.Log(moveX); NE RADI? mozda sync neki
+            if (moveX < 0)
+            {
+                rb.transform.rotation = Quaternion.Euler(0, 180, 0);
+            }
+            else if (moveX > 0)
+            {
+                rb.transform.rotation = Quaternion.Euler(0, 0, 0);
+            }
 
             // Debounce jump input
             if (input.Jump && !jumpPressed && jumpCount < maxJumps)
@@ -86,14 +107,46 @@ public class PlayerCharacterController : NetworkBehaviour
                 jumpCount++;
                 UnityEngine.Debug.Log("Jumped");
                 UpdateJumps();  // nakon svakog skoka azuriraj jump cavnas
+
+                ResetAnimator();
+                animator.SetBool("isJumping", true);
             }
 
             if (!input.Jump)
             {
                 jumpPressed = false;
             }
+
+
+            if (timer.IsRunning)
+            {
+                if (!input.Jump){
+                    if (moveX != 0)
+                    {
+                        ResetAnimator();
+                        animator.SetBool("isRunning", true);
+                    }
+                }
+                // groundedTimer += Time.deltaTime;
+            }
+            else
+            {
+                ResetAnimator();
+                animator.SetBool("isFalling", true);
+            }
         }
     }
+
+private void ResetAnimator()
+{
+    animator.SetBool("isIdle", false);
+    animator.SetBool("isRunning", false);
+    animator.SetBool("isJumping", false);
+    // animator.ResetTrigger(Hurt);
+    // animator.ResetTrigger(Punch);
+    animator.SetBool("isDead", false);
+    animator.SetBool("isFalling", false);
+}
 
 private void UpdateJumps()
 {
@@ -142,6 +195,7 @@ private void UpdateJumps()
             isGrounded = true;
             jumpCount = 0;
             UpdateJumps();
+            timer = TickTimer.CreateFromSeconds(Runner, groundedBuffer);
         }
     }
 
